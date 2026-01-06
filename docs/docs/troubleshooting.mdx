@@ -6,86 +6,65 @@ keywords: [bottom sheet troubleshooting, fixing bottom sheet, debugging bottom s
 
 # Troubleshooting
 
-## React Native Gesture Handler
+## Blank Screen When Dismissing React Native Modal on iOS
 
-[`react-native-gesture-handler`](https://docs.swmansion.com/react-native-gesture-handler/docs/)
+When presenting a TrueSheet on top of a React Native `<Modal>` and then dismissing the Modal (by setting `visible={false}`), the screen may go blank. This is a bug in React Native where dismissing a Modal that has another view controller presented on top of it only dismisses the topmost view controller, leaving the Modal in an inconsistent state.
 
-On Android, [RNGH does not work](https://docs.swmansion.com/react-native-gesture-handler/docs/fundamentals/installation/#usage-with-modals-on-android) by default because modals are not located under React Native Root view in native hierarchy. To fix that, components need to be wrapped with `GestureHandlerRootView`.
+**Workaround:**
+
+Dismiss the sheet first before hiding the Modal:
 
 ```tsx
-import { GestureHandlerRootView } from 'react-native-gesture-handler'
-```
+const sheet = useRef<TrueSheet>(null)
+const [modalVisible, setModalVisible] = useState(false)
 
-```tsx {3-5}
-return (
-  <TrueSheet ref={sheet}>
-    <GestureHandlerRootView style={{ flexGrow: 1 }}>
-      <View />
-    </GestureHandlerRootView>
-  </TrueSheet>
-)
+const closeModal = async () => {
+  await sheet.current?.dismiss()
+  setModalVisible(false)
+}
 ```
 
 :::info
-Note that we are using `flexGrow` instead of `flex` here. For some weird reason, `flex` does not work correctly. See [below](#weird-layout-render).
+A fix has been submitted to React Native. See [PR #55005](https://github.com/facebook/react-native/pull/55005).
 :::
-
-## Touch Events Not Working on Android
-
-On physical Android devices, touch events on buttons and pressables inside TrueSheet may not fire correctly. This appears to be a React Native Fabric limitation with modals.
-
-Related: [#163](https://github.com/lodev09/react-native-true-sheet/issues/163), [#288](https://github.com/lodev09/react-native-true-sheet/issues/288)
-
-**Workarounds:**
-
-1. Use touchable components from [`react-native-gesture-handler`](https://docs.swmansion.com/react-native-gesture-handler/docs/) instead of React Native's built-in components.
-
-2. Set an explicit `width` on `GestureHandlerRootView` to fix first-render layout issues:
-
-```tsx
-import { useWindowDimensions } from 'react-native'
-import { GestureHandlerRootView, TouchableOpacity } from 'react-native-gesture-handler'
-
-const { width } = useWindowDimensions()
-
-return (
-  <TrueSheet ref={sheet}>
-    <GestureHandlerRootView style={{ flexGrow: 1, width }}>
-      <TouchableOpacity onPress={handlePress}>
-        {/* ... */}
-      </TouchableOpacity>
-    </GestureHandlerRootView>
-  </TrueSheet>
-)
-```
-
-## Unable to Drag on Android
-
-If sheet contains `ScrollView` and the content height is smaller than the sheet height, scrolling may not work properly due to a React Native framework limitation. This is because the `ScrollView` won't be scrollable when there's no overflow.
-
-Related: [React Native PR #44099](https://github.com/facebook/react-native/pull/44099)
-
-**Workarounds:**
-
-1. Ensure your content height exceeds the sheet height, or use a `FlatList` with a minimum number of items.
-
-2. Set the `ScrollView`'s `minHeight` to the sheet height + 1 on layout. The extra pixel ensures the content overflows, enabling the scroll behavior. Note that this does not work with `'auto'` detent:
-
-```tsx
-const [minHeight, setMinHeight] = useState<number>()
-
-return (
-  <TrueSheet
-    detents={[0.5, 1]}
-    onLayout={(e) => setMinHeight(e.nativeEvent.layout.height + 1)}
-  >
-    <ScrollView style={{ minHeight }} nestedScrollEnabled>
-      <View />
-    </ScrollView>
-  </TrueSheet>
-)
-```
 
 ## Weird layout render
 
 The sheet does not have control over how React Native renders components and may lead to rendering issues. To resolve this, try to minimize the use of `flex=1` in your content styles. Instead, use fixed `height` or employ `flexGrow`, `flexBasis`, etc., to manage your layout requirements.
+
+## Build Failures with Xcode or EAS
+
+If you encounter build failures when building your iOS app, it may be due to an incorrect Xcode version or EAS build configuration.
+
+### Xcode Version
+
+The package works better with **Xcode 26.2**. If you're building locally, check your Xcode version:
+
+```sh
+xcodebuild -version
+```
+
+If you're experiencing issues, we recommend updating to Xcode 26.2.
+
+### EAS Build Configuration
+
+When using [EAS Build](https://docs.expo.dev/build/introduction/), you must configure your `eas.json` to use a build image that includes Xcode 26.2 to build your app. Use `"image": "latest"` or choose from the [available build images](https://docs.expo.dev/build-reference/infrastructure/#ios-server-images):
+
+```json
+{
+  "build": {
+    "production": {
+      "ios": {
+        "image": "latest"
+      }
+    },
+    "development": {
+      "ios": {
+        "image": "latest"
+      }
+    }
+  }
+}
+```
+
+Without this configuration, EAS may use an older build image that doesn't include Xcode 26.2, causing build failures.
